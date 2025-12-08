@@ -1,44 +1,63 @@
 #!/bin/bash
-# INSTALADOR AUTOMÁTICO PMESP MANAGER
-# Execute: wget https://raw.githubusercontent.com/ColtSeals/pmesp-vps/main/setup.sh && bash setup.sh
+# INSTALADOR AUTOMÁTICO - PMESP MANAGER
+# Repositório: ColtSeals/pmesp-vps
 
-echo -e "\033[1;34m>>> INICIANDO INSTALAÇÃO DO SISTEMA TÁTICO PMESP <<<\033[0m"
+# --- CONFIGURAÇÕES ---
+DIR_INSTALL="/root/pmesp_sistema"
 
-# 1. Atualizar sistema e instalar base
+# CORREÇÃO: URL EXATA DO SEU REPOSITÓRIO
+REPO_RAW="https://raw.githubusercontent.com/ColtSeals/pmesp-vps/refs/heads/main"
+# Nota: Se o link acima falhar, tente: "https://raw.githubusercontent.com/ColtSeals/pmesp-vps/main"
+
+echo -e "\033[1;34m>>> INICIANDO INSTALAÇÃO DO PMESP MANAGER (CORRIGIDO) <<<\033[0m"
+
+# 1. Preparar Sistema
+echo "Atualizando pacotes..."
 apt-get update -y
-apt-get install -y python3 python3-pip python3-venv git jq screen nano unzip
+apt-get install -y python3 python3-pip python3-venv git jq screen nano unzip curl wget
 
-# 2. Criar pastas
-mkdir -p /root/pmesp_sistema
-cd /root/pmesp_sistema
+# 2. Limpar Instalação Anterior (Importante pois a anterior falhou)
+rm -rf "$DIR_INSTALL"
+mkdir -p "$DIR_INSTALL"
+mkdir -p "$DIR_INSTALL/api"
 
-# 3. Baixar arquivos (Simulação do Git Clone ou Wget direto)
-# AQUI VOCÊ COLOCA A URL REAL DOS SEUS ARQUIVOS NO GITHUB (RAW)
-echo "Baixando arquivos..."
-wget -O menu.sh https://raw.githubusercontent.com/ColtSeals/REPO/main/menu.sh
-wget -O api.py https://raw.githubusercontent.com/ColtSeals/REPO/main/api/main.py
-wget -O requirements.txt https://raw.githubusercontent.com/ColtSeals/REPO/main/api/requirements.txt
+# 3. Baixar Arquivos do GitHub (URL Corrigida)
+echo "Baixando arquivos de: $REPO_RAW"
 
-# 4. Permissões
-chmod +x menu.sh
+wget -q -O "$DIR_INSTALL/menu.sh" "$REPO_RAW/menu.sh"
+wget -q -O "$DIR_INSTALL/api/main.py" "$REPO_RAW/api/main.py"
+wget -q -O "$DIR_INSTALL/api/requirements.txt" "$REPO_RAW/api/requirements.txt"
 
-# 5. Instalar dependências Python
+# Verificação de Segurança
+if [ ! -s "$DIR_INSTALL/menu.sh" ]; then
+    echo -e "\033[1;31mERRO CRÍTICO: O download falhou novamente.\033[0m"
+    echo "Verifique se os arquivos 'menu.sh' e a pasta 'api' existem no GitHub."
+    echo "URL tentada: $REPO_RAW/menu.sh"
+    exit 1
+fi
+
+# 4. Configurar Permissões e Atalho
+chmod +x "$DIR_INSTALL/menu.sh"
+ln -sf "$DIR_INSTALL/menu.sh" /usr/bin/menu
+
+# 5. Configurar Python da API
+echo "Instalando dependências da API..."
+cd "$DIR_INSTALL/api" || exit
 python3 -m venv venv
 source venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements.txt > /dev/null 2>&1
 deactivate
 
-# 6. Criar Serviço SystemD (Para a API rodar sozinha no fundo)
-echo "Criando serviço da API..."
+# 6. Serviço SystemD
 cat <<EOF > /etc/systemd/system/pmesp-api.service
 [Unit]
-Description=API de Autenticacao PMESP
+Description=API PMESP Backend
 After=network.target
 
 [Service]
 User=root
-WorkingDirectory=/root/pmesp_sistema
-ExecStart=/root/pmesp_sistema/venv/bin/uvicorn api:app --host 0.0.0.0 --port 54321
+WorkingDirectory=$DIR_INSTALL/api
+ExecStart=$DIR_INSTALL/api/venv/bin/uvicorn main:app --host 0.0.0.0 --port 54321
 Restart=always
 
 [Install]
@@ -47,12 +66,8 @@ EOF
 
 systemctl daemon-reload
 systemctl enable pmesp-api
-systemctl start pmesp-api
-
-# 7. Atalho para o menu
-echo "alias pmesp='/root/pmesp_sistema/menu.sh'" >> /root/.bashrc
-ln -sf /root/pmesp_sistema/menu.sh /usr/bin/pmesp
+systemctl restart pmesp-api
 
 echo -e "\033[1;32m>>> INSTALAÇÃO CONCLUÍDA! <<<\033[0m"
-echo "A API está rodando na porta 54321 (Libere no Firewall)"
-echo "Digite 'pmesp' para abrir o menu."
+echo "Agora deve funcionar."
+echo -e "Digite: \033[1;33mmenu\033[0m"
