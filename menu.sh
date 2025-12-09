@@ -494,13 +494,13 @@ install_sslh() {
 
     cat <<'EOF' >/etc/default/sslh
 RUN=yes
-DAEMON_OPTS="--user sslh --listen 0.0.0.0:50000 --ssh 127.0.0.1:22 --pidfile /run/sslh/sslh.pid"
+DAEMON_OPTS="--user sslh --listen 0.0.0.0:443 --ssh 127.0.0.1:22 --pidfile /run/sslh/sslh.pid"
 EOF
 
     systemctl enable sslh >/dev/null 2>&1
     systemctl restart sslh
-    echo -e "${G}SSLH rodando na porta 50000!${NC}"
-    echo "Configure o APP/Injector para conectar em: 50000"
+    echo -e "${G}SSLH rodando na porta 443!${NC}"
+    echo "Configure o APP/Injector para conectar em: 443"
     read -p "Enter..."
 }
 
@@ -552,7 +552,7 @@ menu() {
         echo -e "${C}┣${LINE_H}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┫${NC}"
         echo -e "${C}┃ ${W}${G}12${W} ⮞ INSTALAR DEPENDÊNCIAS ${C}                             ┃${NC}"
         echo -e "${C}┃ ${W}${G}13${W} ⮞ INSTALAR SQUID (Porta 40000) ${C}                      ┃${NC}"
-        echo -e "${C}┃ ${W}${G}14${W} ⮞ INSTALAR SSLH (Porta 50000) ${C}                       ┃${NC}"
+        echo -e "${C}┃ ${W}${G}14${W} ⮞ INSTALAR SSLH (Porta 443) ${C}                       ┃${NC}"
         echo -e "${C}┃ ${W}${G}15${W} ⮞ ATIVAR MONITOR (CRON) ${C}                             ┃${NC}"
         echo -e "${C}┣${LINE_H}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┫${NC}"
         echo -e "${C}┃ ${R}00${W} ⮞ SAIR ${C}                                                ┃${NC}"
