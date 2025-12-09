@@ -1,1 +1,45 @@
+{
+  "plataforma": "Android Mobile",
+  "tema": {
+    "PRIMARY_COLOR": "#f97316",
+    "BG_COLOR": "#000000",
+    "SURFACE_COLOR": "#1c1917",
+    "TEXT_COLOR": "#ffffff",
+    "TITULO_APP": "PMESP MOBILE"
+  },
+  "mensagens": {
+    "boas_vindas": "Modo Mobile Ativo.",
+    "rodape": "Dados Móveis Otimizados"
+  },
+  "funcionalidades": {
+    "exibir_admin": false,
+    "exibir_graficos": false
+  },
+  "links_rapidos": [
+    {
+      "titulo": "CONSULTA PLACA",
+      "subtitulo": "Muralha Rápido",
+      "icone": "car_crash",
+      "cor": "#f97316",
+      "url": "https://operacional.muralhapaulista.sp.gov.br/Home/Login",
+      "status": "MOBILE"
+    },
+    {
+      "titulo": "COPOM LITE",
+      "subtitulo": "Despacho",
+      "icone": "radio",
+      "cor": "#3b82f6",
+      "url": "https://copomonline.policiamilitar.sp.gov.br/Login/Login",
+      "status": "ONLINE"
+    },
+    {
+      "titulo": "ADMINISTRAÇÃO",
+      "subtitulo": "Gestão de Usuários",
+      "icone": "admin_panel_settings",
+      "cor": "#64748b",
+      "url": "INTERNO",
+      "status": "RESTRITO"
+    }
+  ]
+}
 
