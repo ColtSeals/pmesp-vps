@@ -1,11 +1,12 @@
 import json
-from fastapi import FastAPI, HTTPException, Request
-from pydantic import BaseModel
 import subprocess
+import os
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
 
 app = FastAPI()
 
-# Caminho do banco de dados do seu script Bash
+# Caminho do banco de dados
 DB_FILE = "/etc/pmesp_users.json"
 
 class LoginModel(BaseModel):
@@ -14,60 +15,85 @@ class LoginModel(BaseModel):
     hwid: str
 
 def ler_usuarios():
-    """Lê o arquivo JSON gerado pelo Bash (que salva linha por linha)"""
+    """
+    Lê o arquivo JSON de forma robusta.
+    Funciona tanto se o Bash salvou em uma linha (compacto)
+    quanto se salvou em várias linhas (pretty print).
+    """
     usuarios = []
+
+    if not os.path.exists(DB_FILE):
+        return []
+
     try:
         with open(DB_FILE, "r") as f:
-            for linha in f:
-                if linha.strip():
-                    try:
-                        usuarios.append(json.loads(linha))
-                    except:
-                        continue
-    except FileNotFoundError:
+            conteudo = f.read().strip()
+
+            if not conteudo:
+                return []
+
+            # Decodificador inteligente que lê múltiplos objetos JSON concatenados
+            decoder = json.JSONDecoder()
+            pos = 0
+            while pos < len(conteudo):
+                # Pula espaços em branco (quebras de linha, espaços)
+                while pos < len(conteudo) and conteudo[pos].isspace():
+                    pos += 1
+
+                if pos >= len(conteudo):
+                    break
+
+                try:
+                    # Tenta extrair o próximo objeto JSON válido
+                    obj, end_pos = decoder.raw_decode(conteudo, pos)
+                    usuarios.append(obj)
+                    pos = end_pos
+                except json.JSONDecodeError:
+                    # Se achar lixo no arquivo, pula 1 caractere e tenta de novo
+                    pos += 1
+
+    except Exception as e:
+        print(f"Erro ao ler banco de dados: {e}")
         return []
+
     return usuarios
 
 @app.post("/auth")
 def autenticar(dados: LoginModel):
+    print(f"--> Recebido login: {dados.usuario} | Senha: {dados.senha}")
+
     users = ler_usuarios()
-    
-    # Procura o usuário
-    user_encontrado = next((u for u in users if u["usuario"] == dados.usuario), None)
-    
+    print(f"--> Usuários carregados do banco: {len(users)}")
+
+    # Busca o usuário (ignora maiúsculas/minúsculas)
+    user_encontrado = next((u for u in users if u.get("usuario", "").lower() == dados.usuario.lower()), None)
+
     if not user_encontrado:
+        print("--> Falha: Usuário não encontrado na lista.")
         raise HTTPException(status_code=401, detail="Usuário não encontrado")
-    
+
     # 1. Verifica Senha
-    if user_encontrado["senha"] != dados.senha:
+    senha_db = str(user_encontrado.get("senha", "")).strip()
+    senha_input = str(dados.senha).strip()
+
+    if senha_db != senha_input:
+        print("--> Falha: Senha incorreta.")
         raise HTTPException(status_code=401, detail="Senha incorreta")
-    
-    # 2. Verifica Validade (Chama comando Linux para checar)
-    # O script python chama o 'chage' do linux para ver se expirou
-    try:
-        cmd = f"chage -l {dados.usuario} | grep 'Account expires'"
-        resultado = subprocess.check_output(cmd, shell=True).decode()
-        if "Account expires" in resultado:
-            data_str = resultado.split(":")[1].strip()
-            # Se não for 'never', precisamos checar a data (simplificado aqui)
-            # Para produção, converteríamos data para timestamp
-            pass 
-    except:
-        pass # Se der erro no comando, assume que tá ok ou trata depois
 
-    # 3. Verifica HWID
-    # Se no banco estiver "PENDENTE", a gente atualiza (Opcional - Lógica de Auto-Vinculo)
-    if user_encontrado.get("hwid") == "PENDENTE":
-        # Aqui você precisaria de uma função para atualizar o JSON
-        # Por segurança, vamos apenas negar se não bater, ou liberar se for o primeiro acesso
-        pass 
-    elif user_encontrado.get("hwid") != dados.hwid:
-        raise HTTPException(status_code=403, detail="HWID Inválido (Computador diferente)")
+    # 2. Verifica HWID
+    hwid_db = user_encontrado.get("hwid", "PENDENTE")
 
-    # 4. SUCESSO - Retorna dados de conexão (Portas Altas)
+    # Lógica de Primeiro Acesso: Se for PENDENTE, libera (Auto-Vinculo seria feito aqui se quisesse)
+    if hwid_db != "PENDENTE" and hwid_db != dados.hwid:
+         print(f"--> Falha HWID: Banco={hwid_db} vs App={dados.hwid}")
+         raise HTTPException(status_code=403, detail="Computador não autorizado (HWID)")
+
+    # 3. SUCESSO
+    print(f"--> SUCESSO: {dados.usuario} logado.")
     return {
         "status": "aprovado",
-        "tunnel_port": 22,    # Ou porta SSH customizada
-        "proxy_port": 40000,  # Porta alta do Squid
-        "mensagem": f"Bem vindo, {user_encontrado['matricula']}"
+        "usuario": user_encontrado['usuario'],
+        "tunnel_port": 443,
+        "proxy_port": 40000,
+        "mensagem": "Conectado"
     }
