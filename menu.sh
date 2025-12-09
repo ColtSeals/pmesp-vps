@@ -1,6 +1,6 @@
 #!/bin/bash
 # ==================================================================
-#  PMESP MANAGER ULTIMATE V8.0 - TÁTICO INTEGRADO (Portas Blindadas)
+#  PMESP MANAGER ULTIMATE V8.1 - CORREÇÃO NUMÉRICA & API
 # ==================================================================
 
 # --- ARQUIVOS DE DADOS ---
@@ -46,7 +46,7 @@ cabecalho() {
     _ip=$(wget -qO- ipv4.icanhazip.com 2>/dev/null || echo "N/A")
 
     echo -e "${C}╭${LINE_H}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${C}╮${NC}"
-    echo -e "${C}┃${P}           PMESP MANAGER V8.0 - TÁTICO INTEGRADO           ${C}┃${NC}"
+    echo -e "${C}┃${P}           PMESP MANAGER V8.1 - TÁTICO INTEGRADO           ${C}┃${NC}"
     echo -e "${C}┣${LINE_H}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┫${NC}"
     echo -e "${C}┃ ${Y}TOTAL USUÁRIOS: ${W}$_tuser ${Y}| ONLINE AGORA: ${G}$_ons ${Y}| IP: ${G}$_ip${C}   ┃${NC}"
     echo -e "${C}┗${LINE_H}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛${NC}"
@@ -113,7 +113,7 @@ EOF
     read -p "Enter para voltar..."
 }
 
-# --- GESTÃO DE USUÁRIOS (CRIAR) ---
+# --- GESTÃO DE USUÁRIOS (CRIAR - CORRIGIDO) ---
 criar_usuario() {
     cabecalho
     echo -e "${G}>>> NOVO CADASTRO DE USUÁRIO${NC}"
@@ -121,8 +121,9 @@ criar_usuario() {
     read -p "Email do Policial: " email
     read -p "Login (Usuário): " usuario
 
+    # Verifica se já existe no Linux
     if id "$usuario" >/dev/null 2>&1; then
-        echo -e "\n${R}ERRO: Usuário já existe!${NC}"
+        echo -e "\n${R}ERRO: Usuário Linux '$usuario' já existe!${NC}"
         sleep 2
         return
     fi
@@ -131,15 +132,32 @@ criar_usuario() {
     read -p "Validade (Dias): " dias
     read -p "Limite de Telas (Sessões): " limite
 
-    # Usuário Linux sem shell (Apenas Túnel)
-    useradd -M -s /bin/false "$usuario"
+    echo -e "\n${Y}Criando usuário no sistema...${NC}"
+
+    # --- CORREÇÃO AQUI: Adicionado --badname para aceitar números ---
+    useradd -M -s /bin/false --badname "$usuario"
+
+    # Verifica se o comando useradd funcionou
+    if [ $? -ne 0 ]; then
+        echo -e "${R}FALHA CRÍTICA: O Linux recusou criar o usuário '$usuario'.${NC}"
+        echo "Verifique os logs ou tente um nome começando com letra."
+        read -p "Enter para voltar..."
+        return
+    fi
+
+    # Define a senha
     echo "$usuario:$senha" | chpasswd
+    if [ $? -ne 0 ]; then
+         echo -e "${R}Erro ao definir senha.${NC}"
+         userdel -f "$usuario" # Remove o usuário quebrado
+         return
+    fi
 
     # Validade do Linux
     data_final=$(date -d "+$dias days" +"%Y-%m-%d")
     chage -E "$data_final" "$usuario"
 
-    # Registra no JSON
+    # Registra no JSON apenas se tudo deu certo
     jq -n \
         --arg u "$usuario" \
         --arg s "$senha" \
@@ -151,7 +169,7 @@ criar_usuario() {
         '{usuario: $u, senha: $s, dias: $d, limite: $l, matricula: $m, email: $e, hwid: $h}' \
         >> "$DB_PMESP"
 
-    echo -e "${G}Usuário Criado!${NC}"
+    echo -e "${G}SUCESSO! Usuário '$usuario' criado e registrado.${NC}"
     read -p "Enter..."
 }
 
@@ -516,7 +534,7 @@ menu() {
     while true; do
         cabecalho
         echo -e "${C}╭${LINE_H}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${C}╮${NC}"
-        echo -e "${C}┃${W}          ${G}🛡️ GESTÃO BLINDADA PMESP V8.0 ${NC}                  ${C}┃${NC}"
+        echo -e "${C}┃${W}          ${G}🛡️ GESTÃO BLINDADA PMESP V8.1 ${NC}                  ${C}┃${NC}"
         echo -e "${C}┣${LINE_H}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┫${NC}"
         
         echo -e "${C}┃ ${W}${G}01${W} ⮞ CRIAR USUÁRIO ${C}                                     ┃${NC}"
