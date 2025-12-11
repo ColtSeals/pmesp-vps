@@ -53,14 +53,10 @@ def require_admin(api_key: str = Security(api_key_header)):
 # --------------------------------------------------------------------
 
 class PublicRegister(BaseModel):
-    """
-    Pré-cadastro público (sem token de admin).
-    Cria um usuário pendente, sem validade e bloqueado.
-    Já armazena o HWID da máquina.
-    """
     username: str
     matricula: str
     email: EmailStr
+    senha_linux: str          # NOVO: senha que o usuário quer usar no Linux
     hwid: str
 
 
