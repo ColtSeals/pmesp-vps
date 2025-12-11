@@ -17,7 +17,7 @@ class User(Base):
     email = Column(String(255), nullable=False)
     hwid = Column(String(255), nullable=True)  # HWID da máquina
     dias_validade = Column(Integer, nullable=False, default=0)
-    expires_at = Column(DateTime, nullable=False)
+    expires_at = Column(DateTime, nullable=True)  # no pré-cadastro pode ficar None
     session_limit = Column(Integer, nullable=False, default=1)
     role = Column(String(50), nullable=False, default="user")   # 'admin', 'user', etc.
     is_active = Column(Boolean, nullable=False, default=True)
