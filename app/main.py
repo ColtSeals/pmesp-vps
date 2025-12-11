@@ -64,7 +64,8 @@ class UserActivate(BaseModel):
     dias_validade: int
     session_limit: int = 1
     role: str = "user"
-    senha_linux: str
+    senha_linux: Optional[str] = None   # agora opcional
+
 
 
 # --------------------------------------------------------------------
