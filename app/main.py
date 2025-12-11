@@ -5,6 +5,7 @@ from typing import List
 from fastapi import FastAPI, Depends, HTTPException, Query, Security
 from fastapi.security import APIKeyHeader
 from sqlalchemy.orm import Session
+from pydantic import BaseModel, EmailStr
 
 from .db import Base, engine, get_db
 from . import models
@@ -26,30 +27,56 @@ from .services.monitor import listar_usuarios_online
 from .services.tickets import create_ticket, list_tickets
 
 
-# Lê o token do ambiente (export PMESP_ADMIN_TOKEN="...").
-# Se não tiver setado, usa um valor padrão (mas é MUITO importante trocar isso!)
-ADMIN_TOKEN = os.getenv("PMESP_ADMIN_TOKEN", "trocar-esse-token-agora")
-
-
 # --------------------------------------------------------------------
 # CONFIGURAÇÃO DE SEGURANÇA (TOKEN DE ADMIN)
 # --------------------------------------------------------------------
 
-# Lê o token do ambiente (export PMESP_ADMIN_TOKEN="...").
-# Se não tiver setado, usa um valor padrão (mas é MUITO importante trocar isso!)
 ADMIN_TOKEN = os.getenv("PMESP_ADMIN_TOKEN", "trocar-esse-token-agora")
 
-# Definimos um header HTTP chamado X-Admin-Token
 api_key_header = APIKeyHeader(name="X-Admin-Token", auto_error=False)
 
 
 def require_admin(api_key: str = Security(api_key_header)):
     """
-    Essa função será usada como "dependência" das rotas de administrador.
-    Ela verifica se o header X-Admin-Token bate com o valor configurado.
+    Essa função será usada como dependência das rotas de administrador.
+    Verifica se o header X-Admin-Token bate com o valor configurado.
     """
     if not api_key or api_key != ADMIN_TOKEN:
-        raise HTTPException(status_code=401, detail="Não autorizado (admin token inválido)")
+        raise HTTPException(
+            status_code=401,
+            detail="Não autorizado (admin token inválido)"
+        )
+
+
+# --------------------------------------------------------------------
+# Pydantic extras (somente para esse arquivo)
+# --------------------------------------------------------------------
+
+class PublicRegister(BaseModel):
+    """
+    Pré-cadastro público (sem token de admin).
+    Cria um usuário pendente, sem validade e bloqueado.
+    Já armazena o HWID da máquina.
+    """
+    username: str
+    matricula: str
+    email: EmailStr
+    hwid: str
+
+
+class UserActivate(BaseModel):
+    """
+    Corpo para ativação de um usuário pré-cadastrado.
+    O admin define:
+      - dias de validade
+      - limite de sessões
+      - papel (role)
+      - senha Linux
+    """
+    dias_validade: int
+    session_limit: int = 1
+    role: str = "user"
+    senha_linux: str
 
 
 # --------------------------------------------------------------------
@@ -72,11 +99,50 @@ def ping():
 @app.post("/auth/check", response_model=LoginStatus)
 def auth_check(body: LoginCheck, db: Session = Depends(get_db)):
     """
-    Rota que o seu cliente Windows vai chamar antes de abrir o túnel SSH.
+    Rota que o cliente Windows chama antes de abrir o túnel SSH.
     (rota pública - não exige token de admin)
     """
     status = check_login_status(db, body)
     return status
+
+
+@app.post("/public/register")
+def public_register(body: PublicRegister, db: Session = Depends(get_db)):
+    """
+    Pré-cadastro público de usuário.
+    - Não cria usuário no Linux ainda.
+    - Salva username, matrícula, email, HWID.
+    - Fica com dias_validade=0, expires_at=None, is_active=False.
+    Depois o admin precisa chamar /users/{username}/activate.
+    """
+    existing = db.query(models.User).filter_by(username=body.username).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Usuário já existe")
+
+    now = datetime.utcnow()
+
+    user = models.User(
+        username=body.username,
+        matricula=body.matricula,
+        email=body.email,
+        hwid=body.hwid,
+        dias_validade=0,
+        expires_at=None,          # ainda não liberado
+        session_limit=1,
+        role="user",
+        is_active=False,          # bloqueado até o gestor ativar
+        created_at=now,
+        updated_at=now,
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+
+    return {
+        "status": "ok",
+        "message": "Pré-cadastro recebido. Aguarde liberação do gestor.",
+        "username": user.username,
+    }
 
 
 # ----------------------- Usuários (ADMIN) -----------------------
@@ -87,7 +153,12 @@ def create_user(
     db: Session = Depends(get_db),
     _admin=Depends(require_admin),
 ):
-    # Verifica se já existe
+    """
+    Cria usuário COMPLETO:
+      - cria no Linux
+      - grava no banco como ativo
+    (fluxo clássico, sem pré-cadastro).
+    """
     existing = db.query(models.User).filter_by(username=user_in.username).first()
     if existing:
         raise HTTPException(status_code=400, detail="Usuário já existe")
@@ -97,15 +168,14 @@ def create_user(
         expires_at = criar_usuario_linux(
             username=user_in.username,
             senha=user_in.senha_linux,
-            dias_validade=user_in.dias_validade
+            dias_validade=user_in.dias_validade,
         )
     except Exception as e:
         raise HTTPException(
             status_code=500,
-            detail=f"Erro ao criar usuário no Linux: {e}"
+            detail=f"Erro ao criar usuário no Linux: {e}",
         )
 
-    # Registra no banco
     now = datetime.utcnow()
     user = models.User(
         username=user_in.username,
@@ -119,6 +189,54 @@ def create_user(
         created_at=now,
         updated_at=now,
     )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+@app.post("/users/{username}/activate", response_model=UserRead)
+def activate_user(
+    username: str,
+    body: UserActivate,
+    db: Session = Depends(get_db),
+    _admin: None = Depends(require_admin),
+):
+    """
+    Ativa um usuário PRÉ-CADASTRADO (criado via /public/register).
+    - Cria usuário no Linux
+    - Define validade, limite, role
+    - Marca como ativo
+    """
+    user = db.query(models.User).filter_by(username=username).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+
+    if user.expires_at is not None:
+        raise HTTPException(
+            status_code=400,
+            detail="Usuário já possui validade (provavelmente já está ativo).",
+        )
+
+    try:
+        expires_at = criar_usuario_linux(
+            username=user.username,
+            senha=body.senha_linux,
+            dias_validade=body.dias_validade,
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erro ao criar usuário no Linux: {e}",
+        )
+
+    user.dias_validade = body.dias_validade
+    user.expires_at = expires_at
+    user.session_limit = body.session_limit
+    user.role = body.role
+    user.is_active = True
+    user.updated_at = datetime.utcnow()
+
     db.add(user)
     db.commit()
     db.refresh(user)
@@ -182,7 +300,7 @@ def update_validade(
     except Exception as e:
         raise HTTPException(
             status_code=500,
-            detail=f"Erro ao alterar validade no Linux: {e}"
+            detail=f"Erro ao alterar validade no Linux: {e}",
         )
 
     user.dias_validade = body.novos_dias
@@ -207,6 +325,8 @@ def list_expiring(
     users = db.query(models.User).all()
     result = []
     for u in users:
+        if not u.expires_at:
+            continue
         d = u.expires_at.date()
         if d <= limite:
             result.append(u)
