@@ -104,10 +104,11 @@ def check_login_status(db: Session, payload: LoginCheck) -> LoginStatus:
     ]
 
     # 7) Tudo certo → acesso liberado
-    return LoginStatus(
+      return LoginStatus(
         ok=True,
         reason=None,
         dias_restantes=dias_restantes,
         session_limit=user.session_limit,
+        role=user.role,          # NOVO
         sites=sites_info,
     )
