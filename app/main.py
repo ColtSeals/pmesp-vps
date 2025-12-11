@@ -180,7 +180,7 @@ def create_user(
     return user
 
 
-@app.post("/users/{username}/activate", response_model=UserRead)
+@app.post("/users/{username}/activate", response_model=schemas.UserRead)
 def activate_user(
     username: str,
     body: UserActivate,
@@ -203,10 +203,18 @@ def activate_user(
             detail="Usuário já possui validade (provavelmente já está ativo).",
         )
 
+    # NOVO: decide qual senha usar
+    senha_final = body.senha_linux or getattr(user, "senha_pendente", None)
+    if not senha_final:
+        raise HTTPException(
+            status_code=400,
+            detail="Nenhuma senha informada (nem no pré-cadastro nem na ativação).",
+        )
+
     try:
         expires_at = criar_usuario_linux(
             username=user.username,
-            senha=body.senha_linux,
+            senha=senha_final,
             dias_validade=body.dias_validade,
         )
     except Exception as e:
@@ -220,12 +228,14 @@ def activate_user(
     user.session_limit = body.session_limit
     user.role = body.role
     user.is_active = True
+    user.senha_pendente = None        # limpa do banco depois de usar
     user.updated_at = datetime.utcnow()
 
     db.add(user)
     db.commit()
     db.refresh(user)
     return user
+
 
 
 @app.get("/users", response_model=List[UserRead])
