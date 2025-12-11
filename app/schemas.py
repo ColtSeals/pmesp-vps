@@ -79,7 +79,9 @@ class LoginStatus(BaseModel):
     reason: Optional[str] = None
     dias_restantes: Optional[int] = None
     session_limit: Optional[int] = None
+    role: Optional[str] = None        # NOVO
     sites: Optional[List[SiteInfo]] = None
+
 
 
 # ---------- MONITOR ----------
