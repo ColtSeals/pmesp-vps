@@ -61,14 +61,6 @@ class PublicRegister(BaseModel):
 
 
 class UserActivate(BaseModel):
-    """
-    Corpo para ativação de um usuário pré-cadastrado.
-    O admin define:
-      - dias de validade
-      - limite de sessões
-      - papel (role)
-      - senha Linux
-    """
     dias_validade: int
     session_limit: int = 1
     role: str = "user"
@@ -104,41 +96,35 @@ def auth_check(body: LoginCheck, db: Session = Depends(get_db)):
 
 @app.post("/public/register")
 def public_register(body: PublicRegister, db: Session = Depends(get_db)):
-    """
-    Pré-cadastro público de usuário.
-    - Não cria usuário no Linux ainda.
-    - Salva username, matrícula, email, HWID.
-    - Fica com dias_validade=0, expires_at=None, is_active=False.
-    Depois o admin precisa chamar /users/{username}/activate.
-    """
-    existing = db.query(models.User).filter_by(username=body.username).first()
+    existing = (
+        db.query(models.User)
+        .filter(models.User.username == body.username)
+        .first()
+    )
     if existing:
-        raise HTTPException(status_code=400, detail="Usuário já existe")
-
-    now = datetime.utcnow()
+        raise HTTPException(
+            status_code=400,
+            detail="Já existe um usuário com esse login.",
+        )
 
     user = models.User(
         username=body.username,
         matricula=body.matricula,
         email=body.email,
         hwid=body.hwid,
-        dias_validade=0,
-        expires_at=None,          # ainda não liberado
+        senha_pendente=body.senha_linux,   # NOVO: guarda a senha escolhida
+        dias_validade=0,                    # continua 0 (aguardando liberação)
+        expires_at=None,
         session_limit=1,
         role="user",
-        is_active=False,          # bloqueado até o gestor ativar
-        created_at=now,
-        updated_at=now,
+        is_active=False,
     )
+
     db.add(user)
     db.commit()
     db.refresh(user)
+    return {"status": "ok", "message": "Pré-cadastro realizado com sucesso."}
 
-    return {
-        "status": "ok",
-        "message": "Pré-cadastro recebido. Aguarde liberação do gestor.",
-        "username": user.username,
-    }
 
 
 # ----------------------- Usuários (ADMIN) -----------------------
