@@ -21,6 +21,8 @@ from .services.linux_users import (
     alterar_validade_linux,
     delete_user_linux,
     kick_user,
+    alterar_senha_linux, 
+    user_exists
 )
 from .services.auth import check_login_status
 from .services.monitor import listar_usuarios_online
