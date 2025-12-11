@@ -50,6 +50,25 @@ def alterar_validade_linux(username: str, novos_dias: int) -> datetime:
         check=True
     )
     return data_final
+def alterar_senha_linux(username: str, nova_senha: str) -> None:
+    """
+    Altera a senha do usuário no Linux via chpasswd.
+    """
+    if not user_exists(username):
+        raise RuntimeError(f"Usuário Linux '{username}' não existe.")
+
+    proc = subprocess.Popen(
+        ["chpasswd"],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    saida, erro = proc.communicate(f"{username}:{nova_senha}".encode())
+
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"Falha ao alterar senha no Linux: {erro.decode().strip()}"
+        )
 
 
 def delete_user_linux(username: str) -> None:
