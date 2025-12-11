@@ -16,6 +16,16 @@ from .schemas import (
     TicketCreate, TicketRead,
     OnlineUser,
 )
+from .db import Base, engine, get_db, SessionLocal   # NOVO: SessionLocal
+from .services.linux_users import (
+    criar_usuario_linux,
+    alterar_validade_linux,
+    delete_user_linux,
+    kick_user,
+    alterar_senha_linux,   # NOVO
+    user_exists,           # vamos usar no admin default
+)
+
 from .services.linux_users import (
     criar_usuario_linux,
     alterar_validade_linux,
@@ -78,6 +88,56 @@ app = FastAPI(title="PMESP VPS API", version="0.1.0")
 
 # Cria as tabelas no banco ao iniciar
 Base.metadata.create_all(bind=engine)
+
+def create_default_admin():
+    """
+    Garante que exista um usuário admin/admin no banco (e no Linux).
+    NÃO use isso em produção sem trocar a senha depois.
+    """
+    db = SessionLocal()
+    try:
+        existing = db.query(models.User).filter_by(username="admin").first()
+        if existing:
+            return
+
+        dias_validade = 3650  # ~10 anos
+        expires_at = None
+
+        try:
+            if not user_exists("admin"):
+                expires_at = criar_usuario_linux(
+                    username="admin",
+                    senha="admin",
+                    dias_validade=dias_validade,
+                )
+            else:
+                # se já existir no Linux, apenas renova a validade
+                expires_at = alterar_validade_linux("admin", dias_validade)
+        except Exception as e:
+            print(f"[WARN] Não foi possível criar/ajustar usuário Linux 'admin': {e}")
+
+        now = datetime.utcnow()
+        admin_user = models.User(
+            username="admin",
+            matricula="000000",
+            email="admin@local",
+            hwid="PENDENTE",
+            dias_validade=dias_validade,
+            expires_at=expires_at,
+            session_limit=10,
+            role="admin",
+            is_active=True,
+            created_at=now,
+            updated_at=now,
+        )
+        db.add(admin_user)
+        db.commit()
+        print("[INIT] Usuário padrão admin/admin criado. Troque a senha depois!")
+    finally:
+        db.close()
+
+
+create_default_admin()
 
 
 # ----------------------- Rotas públicas -----------------------
@@ -305,6 +365,34 @@ def update_validade(
     db.commit()
     db.refresh(user)
     return user
+
+@app.post("/users/{username}/password")
+def change_password(
+    username: str,
+    body: ChangePasswordBody,
+    db: Session = Depends(get_db),
+    _admin: None = Depends(require_admin),
+):
+    """
+    Altera a senha do usuário no Linux.
+    Pensado para ser usado em fluxos de reset de senha (SMTP, token etc).
+    """
+    try:
+        alterar_senha_linux(username, body.nova_senha)
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erro ao alterar senha no Linux: {e}",
+        )
+
+    user = db.query(models.User).filter_by(username=username).first()
+    if user:
+        user.senha_pendente = None
+        user.updated_at = datetime.utcnow()
+        db.add(user)
+        db.commit()
+
+    return {"status": "ok", "message": "Senha alterada com sucesso."}
 
 
 @app.get("/users/expiring", response_model=List[UserRead])
